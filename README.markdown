@@ -22,7 +22,8 @@ features currently not available with the plain Markdown syntax.
 Prerequisites
 -------------
 
-*  Redmine >= 0.9.4
+*  Ruby >= 1.9.3
+*  Redmine >= 2.0.0
 *  BlueFeather gem - see http://ruby.morphball.net/bluefeather/index_en.html
 
 

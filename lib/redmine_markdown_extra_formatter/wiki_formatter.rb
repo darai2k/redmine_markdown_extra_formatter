@@ -88,6 +88,125 @@ module BlueFeather
 
       }
     end
+
+    ### Apply Markdown anchor transforms to a copy of the specified +str+ with
+    ### the given render state +rs+ and return it.
+    def transform_anchors( str, rs )
+      @log.debug " Transforming anchors"
+      @scanner.string = str.dup
+      text = ''
+
+      # Scan the whole string
+      until @scanner.empty?
+
+        if @scanner.scan( /\[/ )
+          link = ''; linkid = ''
+          depth = 1
+          startpos = @scanner.pos
+          @log.debug " Found a bracket-open at %d" % startpos
+
+          # Scan the rest of the tag, allowing unlimited nested []s. If
+          # the scanner runs out of text before the opening bracket is
+          # closed, append the text and return (wasn't a valid anchor).
+          while depth.nonzero?
+            linktext = @scanner.scan_until( /\]|\[/ )
+
+            if linktext
+              @log.debug "  Found a bracket at depth %d: %p" % [ depth, linktext ]
+              link += linktext
+
+              # Decrement depth for each closing bracket
+              depth += ( linktext[-1, 1] == ']' ? -1 : 1 )
+              @log.debug "  Depth is now #{depth}"
+
+            # If there's no more brackets, it must not be an anchor, so
+            # just abort.
+            else
+              @log.debug "  Missing closing brace, assuming non-link."
+              link += @scanner.rest
+              @scanner.terminate
+              return text + '[' + link
+            end
+          end
+          link.slice!( -1 ) # Trim final ']'
+          @log.debug " Found leading link %p" % link
+
+
+
+          # Markdown Extra: Footnote
+          if link =~ /^\^(.+)/ then
+            id = $1
+            if rs.footnotes[id] then
+              rs.found_footnote_ids << id
+              label = "[#{rs.found_footnote_ids.size}]"
+            else
+              rs.warnings << "undefined footnote id - #{id}"
+              label = '[?]'
+            end
+
+            text += %Q|<sup id="footnote-ref:#{id}"><a href="#footnote:#{id}" rel="footnote">#{label}</a></sup>|
+
+          # Look for a reference-style second part
+          elsif @scanner.scan( RefLinkIdRegexp )
+            linkid = @scanner[1]
+            linkid = link.dup if linkid.empty?
+            linkid.downcase!
+            @log.debug "  Found a linkid: %p" % linkid
+
+            # If there's a matching link in the link table, build an
+            # anchor tag for it.
+            if rs.urls.key?( linkid )
+              @log.debug "   Found link key in the link table: %p" % rs.urls[linkid]
+              url = escape_md( rs.urls[linkid] )
+
+              text += %{<a href="#{url}"}
+              if rs.titles.key?(linkid)
+                text += %{ title="%s"} % escape_md( rs.titles[linkid] )
+              end
+              text += %{>#{link}</a>}
+
+            # If the link referred to doesn't exist, just append the raw
+            # source to the result
+            else
+              @log.debug "  Linkid %p not found in link table" % linkid
+              @log.debug "  Appending original string instead: "
+              @log.debug "%p" % @scanner.string.byteslice( startpos-1 .. @scanner.pos-1 )
+
+              rs.warnings << "link-id not found - #{linkid}"
+              text += @scanner.string.byteslice( startpos-1 .. @scanner.pos-1 )
+            end
+
+          # ...or for an inline style second part
+          elsif @scanner.scan( InlineLinkRegexp )
+            url = @scanner[1]
+            title = @scanner[3]
+            @log.debug "  Found an inline link to %p" % url
+
+            url = "##{link}" if url == '#' # target anchor briefing (since BlueFeather 0.40)
+
+            text += %{<a href="%s"} % escape_md( url )
+            if title
+              title.gsub!( /"/, "&quot;" )
+              text += %{ title="%s"} % escape_md( title )
+            end
+            text += %{>#{link}</a>}
+
+          # No linkid part: just append the first part as-is.
+          else
+            @log.debug "No linkid, so no anchor. Appending literal text."
+            text += @scanner.string.byteslice( startpos-1 .. @scanner.pos-1 )
+          end # if linkid
+
+        # Plain text
+        else
+          @log.debug " Scanning to the next link from %p" % @scanner.rest
+          text += @scanner.scan( /[^\[]+/ )
+        end
+
+      end # until @scanner.empty?
+
+      return text
+    end
   end
 end
 
