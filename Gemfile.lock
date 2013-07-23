@@ -1,0 +1,10 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    bluefeather (0.41)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  bluefeather
